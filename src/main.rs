@@ -1,6 +1,8 @@
 use std::env;
 use std::sync::Arc;
 
+use local_ip_address::local_ip;
+
 use anyhow::Result;
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::Mutex;
@@ -24,8 +26,9 @@ async fn main() -> Result<()> {
     let module_path = std::path::PathBuf::from(&args[2]);
     println!("🔧 Serving module at {}", module_path.display());
 
-    let listener = TcpListener::bind("127.0.0.1:9001").await?;
-    println!("🚀 Dev server listening on ws://127.0.0.1:9001/dev");
+    let listener = TcpListener::bind("0.0.0.0:9001").await?;
+    let ip = local_ip().expect("Failed to get local IP");
+    println!("🚀 Dev server listening on ws://{ip}:9001/dev");
 
     let connected_socket: Arc<Mutex<Option<tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>>>> =
         Arc::new(Mutex::new(None));
