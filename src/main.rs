@@ -8,6 +8,10 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::sync::Mutex;
 use tokio::net::TcpListener;
 use tokio_tungstenite::accept_async;
+use futures_util::stream::SplitSink;
+use tokio_tungstenite::WebSocketStream;
+use tokio::net::TcpStream;
+use tokio_tungstenite::tungstenite::Message;
 
 mod watcher;
 mod builder;
@@ -30,7 +34,7 @@ async fn main() -> Result<()> {
     let ip = local_ip().expect("Failed to get local IP");
     println!("🚀 Dev server listening on ws://{ip}:9001/dev");
 
-    let connected_socket: Arc<Mutex<Option<tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>>>> =
+    let connected_socket: Arc<Mutex<Option<SplitSink<WebSocketStream<TcpStream>, Message>>>> =
         Arc::new(Mutex::new(None));
 
     let socket_clone = connected_socket.clone();
@@ -76,14 +80,31 @@ async fn main() -> Result<()> {
         let ws_stream = accept_async(stream).await?;
         println!("✅ App connected");
 
-        // Store the socket
-        *connected_socket.lock().await = Some(ws_stream);
+        // Split into read and write halves
+        let (mut write, mut read) = ws_stream.split();
 
-        // TODO: Add support for receiving messages, like Logs
-        // let ws_read = connected_socket.clone();
-        // tokio::spawn(async move { /* handle incoming frames */ });
+        // Store the write half for sending
+        *connected_socket.lock().await = Some(write);
+
+        // Spawn a task to handle incoming messages
+        tokio::spawn(async move {
+            while let Some(msg) = read.next().await {
+                match msg {
+                    Ok(Message::Text(txt)) => {
+                        println!("📩 Received text: {}", txt);
+                    }
+                    Ok(Message::Binary(bin)) => {
+                        println!("📦 Received binary: {} bytes", bin.len());
+                    }
+                    Ok(Message::Close(_)) => {
+                        println!("❌ Client disconnected");
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        });
     }
-
     watcher_task.await?;
     Ok(())
 }
